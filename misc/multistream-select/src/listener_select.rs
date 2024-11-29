@@ -49,7 +49,10 @@ where
     let protocols = protocols
         .into_iter()
         .filter_map(|n| match Protocol::try_from(n.as_ref()) {
-            Ok(p) => Some((n, p)),
+            Ok(p) => {
+                tracing::trace!("listener_select_proto: got protocols {p:?}");
+                Some((n, p))
+            }
             Err(e) => {
                 tracing::warn!(
                     "Listener: Ignoring invalid protocol: {} due to {}",
@@ -230,6 +233,14 @@ where
                                 tracing::debug!(protocol=%p, "Listener: confirming protocol");
                                 Message::Protocol(p.clone())
                             } else {
+                                tracing::debug!(
+                                    "protocols = {0:?}",
+                                    this.protocols
+                                        .iter()
+                                        .map(|(_, p)| p)
+                                        .cloned()
+                                        .collect::<Vec<_>>()
+                                );
                                 tracing::debug!(protocol=%p.as_ref(), "Listener: rejecting protocol");
                                 Message::NotAvailable
                             };

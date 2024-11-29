@@ -297,6 +297,7 @@ where
                 Poll::Ready(ConnectionHandlerEvent::ReportRemoteProtocols(
                     ProtocolSupport::Added(protocols),
                 )) => {
+                    tracing::trace!("Poll::Ready(ReportRemoteProtocols) remote_supported = {remote_supported_protocols:?} protocols = {protocols:?} buffer = {protocol_buffer:?}");
                     if let Some(added) =
                         ProtocolsChange::add(remote_supported_protocols, protocols, protocol_buffer)
                     {
@@ -430,6 +431,7 @@ where
                     Poll::Ready(substream) => {
                         let protocol = handler.listen_protocol();
 
+                        tracing::trace!("swarm::connection - calling new_inbound");
                         negotiating_in.push(StreamUpgrade::new_inbound(
                             substream,
                             protocol,
@@ -594,6 +596,7 @@ impl<UserData, TOk, TErr> StreamUpgrade<UserData, TOk, TErr> {
         let (upgrade, open_info) = protocol.into_upgrade();
         let protocols = upgrade.protocol_info();
 
+        tracing::trace!("new_inbound: calling listener_select_proto ..",);
         Self {
             user_data: Some(open_info),
             timeout: Delay::new(timeout),
@@ -1143,6 +1146,7 @@ mod tests {
 
     impl ConfigurableProtocolConnectionHandler {
         fn listen_on(&mut self, protocols: &[&'static str]) {
+            tracing::trace!("listen_on(): active_protocols {:?}", protocols);
             self.active_protocols = protocols.iter().copied().map(StreamProtocol::new).collect();
         }
 
@@ -1176,6 +1180,7 @@ mod tests {
         fn listen_protocol(
             &self,
         ) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+            tracing::trace!("listen_protocol[0]");
             SubstreamProtocol::new(DeniedUpgrade, ()).with_timeout(self.upgrade_timeout)
         }
 
@@ -1256,6 +1261,7 @@ mod tests {
         fn listen_protocol(
             &self,
         ) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+            tracing::trace!("listen_protocol[1]");
             SubstreamProtocol::new(
                 ManyProtocolsUpgrade {
                     protocols: Vec::from_iter(self.active_protocols.clone()),

@@ -69,6 +69,7 @@ where
         _local_addr: &Multiaddr,
         remote_addr: &Multiaddr,
     ) -> Result<<Self as NetworkBehaviour>::ConnectionHandler, ConnectionDenied> {
+        tracing::trace!("autonat server handle_established_inbound_connection()");
         Ok(Either::Right(dial_request::Handler::new(
             peer,
             remote_addr.clone(),
@@ -84,17 +85,29 @@ where
         _role_override: Endpoint,
         _port_use: PortUse,
     ) -> Result<<Self as NetworkBehaviour>::ConnectionHandler, ConnectionDenied> {
+        tracing::trace!("autonat server handle_established_outbound_connection()");
         Ok(match self.dialing_dial_back.remove(&connection_id) {
-            Some(cmd) => Either::Left(Either::Left(dial_back::Handler::new(cmd))),
-            None => Either::Left(Either::Right(dummy::ConnectionHandler)),
+            Some(cmd) => {
+                tracing::trace!("dialing_dial_back for this connection - reporting dialback");
+                Either::Left(Either::Left(dial_back::Handler::new(cmd)))
+            }
+            None => {
+                tracing::trace!("not doing dial_back for this connection - reporting none");
+                Either::Left(Either::Right(dummy::ConnectionHandler))
+            }
         })
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
+        tracing::trace!("autonat server on_swarm_event {event:?}com");
         if let FromSwarm::DialFailure(DialFailure { connection_id, .. }) = event {
+            tracing::trace!("autonat_server: dialfailure");
             if let Some(DialBackCommand { back_channel, .. }) =
                 self.dialing_dial_back.remove(&connection_id)
             {
+                tracing::trace!(
+                    "autonat_server: dialfailure - removing dialing_dial_back for {connection_id}"
+                );
                 let dial_back_status = DialBackStatus::DialErr;
                 let _ = back_channel.send(Err(dial_back_status));
             }
@@ -107,6 +120,7 @@ where
         _connection_id: ConnectionId,
         event: <Handler<R> as ConnectionHandler>::ToBehaviour,
     ) {
+        tracing::trace!("autonat server on_connection_handler_event()");
         match event {
             Either::Left(Either::Left(Ok(_))) => {}
             Either::Left(Either::Left(Err(e))) => {
@@ -116,6 +130,7 @@ where
             #[allow(unreachable_patterns)]
             Either::Left(Either::Right(v)) => void::unreachable(v),
             Either::Right(Either::Left(cmd)) => {
+                tracing::trace!("dialback!");
                 let addr = cmd.addr.clone();
                 let opts = DialOpts::peer_id(peer_id)
                     .addresses(Vec::from([addr]))
@@ -123,12 +138,17 @@ where
                     .allocate_new_port()
                     .build();
                 let conn_id = opts.connection_id();
+                tracing::trace!(
+                    "Got a dialback request. Adding dialing_dial_back entry for {conn_id}"
+                );
                 self.dialing_dial_back.insert(conn_id, cmd);
                 self.pending_events.push_back(ToSwarm::Dial { opts });
             }
-            Either::Right(Either::Right(status_update)) => self
-                .pending_events
-                .push_back(ToSwarm::GenerateEvent(status_update)),
+            Either::Right(Either::Right(status_update)) => {
+                tracing::trace!("autonat server status_update {status_update:?}");
+                self.pending_events
+                    .push_back(ToSwarm::GenerateEvent(status_update))
+            }
         }
     }
 

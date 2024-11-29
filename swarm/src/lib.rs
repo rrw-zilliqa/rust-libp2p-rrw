@@ -491,7 +491,8 @@ where
                                 connection=%connection_id,
                                 discarded_addresses_count=%num_addresses,
                                 "discarding addresses from `NetworkBehaviour` because `DialOpts::extend_addresses_through_behaviour is `false` for connection"
-                            )
+                            );
+                            tracing::debug!("discarded addresses = {addresses:?}");
                         }
                     }
                 }
@@ -1140,6 +1141,7 @@ where
                 self.pending_handler_event = Some((peer_id, handler, event));
             }
             ToSwarm::NewExternalAddrCandidate(addr) => {
+                tracing::trace!("swarm: got NewExternalAddrCandidate {addr:?}");
                 if !self.confirmed_external_addr.contains(&addr) {
                     self.behaviour
                         .on_swarm_event(FromSwarm::NewExternalAddrCandidate(
@@ -1150,11 +1152,13 @@ where
                 }
             }
             ToSwarm::ExternalAddrConfirmed(addr) => {
+                tracing::trace!("swarm: got NewExternalAddrConfirmed {addr:?}");
                 self.add_external_address(addr.clone());
                 self.pending_swarm_events
                     .push_back(SwarmEvent::ExternalAddrConfirmed { address: addr });
             }
             ToSwarm::ExternalAddrExpired(addr) => {
+                tracing::trace!("swarm: got NewExternalAddrExpired {addr:?}");
                 self.remove_external_address(&addr);
                 self.pending_swarm_events
                     .push_back(SwarmEvent::ExternalAddrExpired { address: addr });

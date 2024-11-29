@@ -283,10 +283,14 @@ impl Behaviour {
         connection_id: ConnectionId,
         observed: &Multiaddr,
     ) {
+        tracing::trace!(
+            "identify::emit_new_external_addr_candidate_event() for observed {observed:?}"
+        );
         if self
             .outbound_connections_with_ephemeral_port
             .contains(&connection_id)
         {
+            tracing::trace!("apply address translation .. ");
             // Apply address translation to the candidate address.
             // For TCP without port-reuse, the observed address contains an ephemeral port which needs to be replaced by the port of a listen address.
             let translated_addresses = {
@@ -310,13 +314,16 @@ impl Behaviour {
                 addrs.dedup();
                 addrs
             };
+            tracing::trace!(".. translated {translated_addresses:?}");
 
             // If address translation yielded nothing, broadcast the original candidate address.
             if translated_addresses.is_empty() {
+                tracing::trace!(" .. NewExternalAddrCandidates {0:?}", observed.clone());
                 self.events
                     .push_back(ToSwarm::NewExternalAddrCandidate(observed.clone()));
             } else {
                 for addr in translated_addresses {
+                    tracing::trace!(" .. NewExternalAddrCandidates Tr {0:?}", addr);
                     self.events
                         .push_back(ToSwarm::NewExternalAddrCandidate(addr));
                 }
@@ -324,6 +331,7 @@ impl Behaviour {
             return;
         }
 
+        tracing::trace!("NewExternalAddrCandidate[2] {0:?}", observed);
         // outgoing connection dialed with port reuse
         // incomming connection
         self.events
@@ -361,6 +369,7 @@ impl NetworkBehaviour for Behaviour {
         _: Endpoint,
         port_use: PortUse,
     ) -> Result<THandler<Self>, ConnectionDenied> {
+        tracing::trace!("identify::handle_established_outbound_connection()");
         // Contrary to inbound events, outbound events are full-p2p qualified
         // so we remove /p2p/ in order to be homogeneous
         // this will avoid Autonatv2 to probe twice the same address (fully-p2p-qualified + not fully-p2p-qualified)
@@ -391,13 +400,16 @@ impl NetworkBehaviour for Behaviour {
         connection_id: ConnectionId,
         event: THandlerOutEvent<Self>,
     ) {
+        tracing::trace!("identify::on_connection_handler_event()");
         match event {
             handler::Event::Identified(mut info) => {
+                tracing::trace!("identified! {0:?}", info.listen_addrs);
                 // Remove invalid multiaddrs.
                 info.listen_addrs
                     .retain(|addr| multiaddr_matches_peer_id(addr, &peer_id));
 
                 let observed = info.observed_addr.clone();
+                tracing::trace!("observed {0:?}", info.observed_addr);
                 self.events
                     .push_back(ToSwarm::GenerateEvent(Event::Received {
                         connection_id,
@@ -406,7 +418,9 @@ impl NetworkBehaviour for Behaviour {
                     }));
 
                 if let Some(ref mut discovered_peers) = self.discovered_peers.0 {
+                    tracing::trace!("Have discovered peers");
                     for address in &info.listen_addrs {
+                        tracing::trace!("  ... discovered_peer {address:?}");
                         if discovered_peers.add(peer_id, address.clone()) {
                             self.events.push_back(ToSwarm::NewExternalAddrOfPeer {
                                 peer_id,
@@ -418,13 +432,16 @@ impl NetworkBehaviour for Behaviour {
 
                 match self.our_observed_addresses.entry(connection_id) {
                     Entry::Vacant(not_yet_observed) => {
+                        tracing::trace!(" .. not_yet_observed ");
                         not_yet_observed.insert(observed.clone());
                         self.emit_new_external_addr_candidate_event(connection_id, &observed);
                     }
                     Entry::Occupied(already_observed) if already_observed.get() == &observed => {
+                        tracing::trace!(" .. already observed ");
                         // No-op, we already observed this address.
                     }
                     Entry::Occupied(mut already_observed) => {
+                        tracing::trace!(" .. occupied! ");
                         tracing::info!(
                             old_address=%already_observed.get(),
                             new_address=%observed,
@@ -437,12 +454,14 @@ impl NetworkBehaviour for Behaviour {
                 }
             }
             handler::Event::Identification => {
+                tracing::trace!("identification");
                 self.events.push_back(ToSwarm::GenerateEvent(Event::Sent {
                     connection_id,
                     peer_id,
                 }));
             }
             handler::Event::IdentificationPushed(info) => {
+                tracing::trace!("identification_pushed");
                 self.events.push_back(ToSwarm::GenerateEvent(Event::Pushed {
                     connection_id,
                     peer_id,
@@ -450,6 +469,7 @@ impl NetworkBehaviour for Behaviour {
                 }));
             }
             handler::Event::IdentificationError(error) => {
+                tracing::trace!("identification_error");
                 self.events.push_back(ToSwarm::GenerateEvent(Event::Error {
                     connection_id,
                     peer_id,

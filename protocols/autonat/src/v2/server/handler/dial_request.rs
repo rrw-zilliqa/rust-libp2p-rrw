@@ -57,6 +57,7 @@ where
     R: RngCore,
 {
     pub(crate) fn new(client_id: PeerId, observed_multiaddr: Multiaddr, rng: R) -> Self {
+        tracing::trace!("autonat server dial_request::new()");
         let (dial_back_cmd_sender, dial_back_cmd_receiver) = mpsc::channel(10);
         Self {
             client_id,
@@ -81,6 +82,7 @@ where
     type OutboundOpenInfo = ();
 
     fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+        tracing::trace!("autonat_v2_server dial_request listen_protocol()");
         SubstreamProtocol::new(ReadyUpgrade::new(DIAL_REQUEST_PROTOCOL), ())
     }
 
@@ -90,23 +92,30 @@ where
     ) -> Poll<
         ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::ToBehaviour>,
     > {
+        tracing::trace!("autonat_v2_server dial_request poll()");
         loop {
             match self.inbound.poll_unpin(cx) {
                 Poll::Ready(Ok(event)) => {
                     if let Err(e) = &event.result {
-                        tracing::warn!("inbound request handle failed: {:?}", e);
+                        tracing::warn!(
+                            "autonat_v2_server dial_request inbound request handle failed: {:?}",
+                            e
+                        );
                     }
                     return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(Either::Right(
                         event,
                     )));
                 }
                 Poll::Ready(Err(e)) => {
-                    tracing::warn!("inbound request handle timed out {e:?}");
+                    tracing::warn!(
+                        "autonat_v2_server dial_request inbound request handle timed out {e:?}"
+                    );
                 }
                 Poll::Pending => break,
             }
         }
         if let Poll::Ready(Some(cmd)) = self.dial_back_cmd_receiver.poll_next_unpin(cx) {
+            tracing::trace!("autonat_v2_server dial_request : dial_request: next_unpin() :: Ready");
             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(Either::Left(cmd)));
         }
         Poll::Pending
@@ -127,6 +136,7 @@ where
             ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound {
                 protocol, ..
             }) => {
+                tracing::trace!("autonat_v2_server dial_request: on_connection_event()");
                 if self
                     .inbound
                     .try_push(handle_request(
@@ -146,7 +156,10 @@ where
             // TODO: remove when Rust 1.82 is MSRV
             #[allow(unreachable_patterns)]
             ConnectionEvent::ListenUpgradeError(ListenUpgradeError { error, .. }) => {
-                tracing::debug!("inbound request failed: {:?}", error);
+                tracing::debug!(
+                    "autonat_v2_server dial_request inbound request failed: {:?}",
+                    error
+                );
             }
             _ => {}
         }

@@ -48,6 +48,7 @@ impl ConnectionHandler for Handler {
     type OutboundOpenInfo = ();
 
     fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+        tracing::trace!("server dial_back::listen_protocol()");
         SubstreamProtocol::new(DeniedUpgrade, ())
     }
 
@@ -84,6 +85,7 @@ impl ConnectionHandler for Handler {
             Self::OutboundOpenInfo,
         >,
     ) {
+        tracing::trace!("server dial_back::on_connection_protocol()");
         match event {
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol, ..

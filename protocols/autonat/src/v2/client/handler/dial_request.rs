@@ -96,6 +96,7 @@ impl Handler {
     }
 
     fn perform_request(&mut self, req: DialRequest) {
+        tracing::trace!("autonat_v2_client::dial_request::perform_request() {req:?}");
         let (tx, rx) = oneshot::channel();
         self.queued_streams.push_back(tx);
         self.queued_events
@@ -167,6 +168,7 @@ impl ConnectionHandler for Handler {
             Self::OutboundOpenInfo,
         >,
     ) {
+        tracing::trace!("dial_request::on_connection_event() - {event:?}");
         match event {
             ConnectionEvent::DialUpgradeError(DialUpgradeError { error, .. }) => {
                 tracing::debug!("Dial request failed: {}", error);
@@ -194,6 +196,7 @@ impl ConnectionHandler for Handler {
                 }
             },
             ConnectionEvent::RemoteProtocolsChange(ProtocolsChange::Added(mut added)) => {
+                tracing::trace!("RemoteProtocolsChange - added {added:?}");
                 if added.any(|p| p.as_ref() == DIAL_REQUEST_PROTOCOL) {
                     self.queued_events
                         .push_back(ConnectionHandlerEvent::NotifyBehaviour(

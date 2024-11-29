@@ -430,6 +430,7 @@ impl Handler {
         remote_peer_id: PeerId,
         mode: Mode,
     ) -> Self {
+        tracing::trace!("kad_handler: new() config {protocol_config:?}");
         match &endpoint {
             ConnectedPoint::Dialer { .. } => {
                 tracing::debug!(
@@ -475,6 +476,7 @@ impl Handler {
             <Self as ConnectionHandler>::OutboundOpenInfo,
         >,
     ) {
+        tracing::trace!("kad_handler: FullyNegotiatedOutbound()");
         if let Some(sender) = self.pending_streams.pop_front() {
             let _ = sender.send(Ok(stream));
         }
@@ -499,6 +501,7 @@ impl Handler {
     ) {
         // If `self.allow_listening` is false, then we produced a `DeniedUpgrade` and `protocol`
         // is a `Void`.
+        tracing::trace!("kad_handler: OnFullyNegotiatedOutbound()");
         let protocol = match protocol {
             future::Either::Left(p) => p,
             // TODO: remove when Rust 1.82 is MSRV
@@ -554,6 +557,7 @@ impl Handler {
     fn queue_new_stream(&mut self, id: QueryId, msg: KadRequestMsg) {
         let (sender, receiver) = oneshot::channel();
 
+        tracing::trace!("kad_handler: queue_new_stream()");
         self.pending_streams.push_back(sender);
         let result = self.outbound_substreams.try_push(
             async move {
@@ -602,6 +606,7 @@ impl ConnectionHandler for Handler {
     type InboundOpenInfo = ();
 
     fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+        tracing::trace!("kad_handler: listen_protocol mode {0}", self.mode);
         match self.mode {
             Mode::Server => SubstreamProtocol::new(Either::Left(self.protocol_config.clone()), ()),
             Mode::Client => SubstreamProtocol::new(Either::Right(upgrade::DeniedUpgrade), ()),
@@ -609,6 +614,7 @@ impl ConnectionHandler for Handler {
     }
 
     fn on_behaviour_event(&mut self, message: HandlerIn) {
+        tracing::trace!("kad_handler: on_behaviour_event: {message:?}");
         match message {
             HandlerIn::Reset(request_id) => {
                 if let Some(state) = self
@@ -684,6 +690,7 @@ impl ConnectionHandler for Handler {
                 self.answer_pending_request(request_id, KadResponseMsg::PutValue { key, value });
             }
             HandlerIn::ReconfigureMode { new_mode } => {
+                tracing::trace!("kad: ReconfigureMode");
                 let peer = self.remote_peer_id;
 
                 match &self.endpoint {
@@ -715,6 +722,10 @@ impl ConnectionHandler for Handler {
     ) -> Poll<
         ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::ToBehaviour>,
     > {
+        tracing::trace!(
+            "kad_handler: poll protocol status {0:?}",
+            self.protocol_status
+        );
         loop {
             match &mut self.protocol_status {
                 Some(status) if !status.reported => {
@@ -788,6 +799,7 @@ impl ConnectionHandler for Handler {
             Self::OutboundOpenInfo,
         >,
     ) {
+        tracing::trace!("kad_handler: event!");
         match event {
             ConnectionEvent::FullyNegotiatedOutbound(fully_negotiated_outbound) => {
                 self.on_fully_negotiated_outbound(fully_negotiated_outbound)
@@ -796,11 +808,13 @@ impl ConnectionHandler for Handler {
                 self.on_fully_negotiated_inbound(fully_negotiated_inbound)
             }
             ConnectionEvent::DialUpgradeError(ev) => {
+                tracing::trace!("kad_Handler: DialUpgradeError");
                 if let Some(sender) = self.pending_streams.pop_front() {
                     let _ = sender.send(Err(ev.error));
                 }
             }
             ConnectionEvent::RemoteProtocolsChange(change) => {
+                tracing::trace!("kad_Handler: RemoteProtocolsChange");
                 let dirty = self.remote_supported_protocols.on_protocols_change(change);
 
                 if dirty {
@@ -814,6 +828,7 @@ impl ConnectionHandler for Handler {
                         self.protocol_status,
                     ))
                 }
+                tracing::trace!("kad_Handler: RemoteProtocolsChange : Over");
             }
             _ => {}
         }

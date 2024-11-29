@@ -90,6 +90,7 @@ where
         _: &Multiaddr,
         _: &Multiaddr,
     ) -> Result<<Self as NetworkBehaviour>::ConnectionHandler, ConnectionDenied> {
+        tracing::trace!("autonat_client_v2: handle_established_inbound_connection");
         Ok(Either::Right(dial_back::Handler::new()))
     }
 
@@ -101,12 +102,15 @@ where
         _: Endpoint,
         _: PortUse,
     ) -> Result<<Self as NetworkBehaviour>::ConnectionHandler, ConnectionDenied> {
+        tracing::trace!("autonat_client_v2: handle established_outbound_connection");
         Ok(Either::Left(dial_request::Handler::new()))
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
+        tracing::trace!("autonat_client_v2: on_swarm_event: {event:?}");
         match event {
             FromSwarm::NewExternalAddrCandidate(NewExternalAddrCandidate { addr }) => {
+                tracing::trace!("autonat_client_v2 on_swarm_event: new external addr candidate");
                 self.address_candidates
                     .entry(addr.clone())
                     .or_default()
@@ -118,6 +122,7 @@ where
                 endpoint: _,
                 ..
             }) => {
+                tracing::trace!("autonat_client_v2 on_swarm_event: connection established");
                 self.peer_info.insert(
                     connection_id,
                     ConnectionInfo {
@@ -131,6 +136,7 @@ where
                 connection_id,
                 ..
             }) => {
+                tracing::trace!("autonat_client_v2 on_swarm_event: connection_closed");
                 let info = self
                     .peer_info
                     .remove(&connection_id)
@@ -150,6 +156,7 @@ where
         connection_id: ConnectionId,
         event: <Self::ConnectionHandler as ConnectionHandler>::ToBehaviour,
     ) {
+        tracing::trace!("autonat_client_v2: on_connection_handler_event() {event:?}!");
         let (nonce, outcome) = match event {
             Either::Right(IncomingNonce { nonce, sender }) => {
                 let Some((_, info)) = self
@@ -189,6 +196,7 @@ where
                     .address_candidates
                     .iter_mut()
                     .any(|(_, info)| info.is_received_with_nonce(nonce));
+                tracing::trace!("Received dial back - queueing ExternalAddrConfirmed");
 
                 if !received_dial_back {
                     tracing::warn!(
@@ -257,6 +265,7 @@ where
             if self.next_tick.poll_unpin(cx).is_ready() {
                 self.next_tick.reset(self.config.probe_interval);
 
+                tracing::trace!("autonat_client_v2: issue_dial_requests_for_untested_candidates()");
                 self.issue_dial_requests_for_untested_candidates();
                 continue;
             }
@@ -286,6 +295,7 @@ where
     /// In the current implementation, we only send a single address to each AutoNAT server.
     /// This spreads our candidates out across all servers we are connected to which should give us pretty fast feedback on all of them.
     fn issue_dial_requests_for_untested_candidates(&mut self) {
+        tracing::trace!("autonat_client_v2_behaviour: issuing dial requests");
         for addr in self.untested_candidates() {
             let Some((conn_id, peer_id)) = self.random_autonat_server() else {
                 tracing::debug!("Not connected to any AutoNAT servers");
@@ -335,6 +345,16 @@ where
 
     /// Chooses an active connection to one of our peers that reported support for the [`DIAL_REQUEST_PROTOCOL`](crate::v2::DIAL_REQUEST_PROTOCOL) protocol.
     fn random_autonat_server(&mut self) -> Option<(ConnectionId, PeerId)> {
+        tracing::trace!(
+            "random_autonat_server(): peer_info {0:?}",
+            self.peer_info
+                .iter()
+                .map(|(x, y)| format!(
+                    "id={x}, peer={0} supports_autonat={1}",
+                    y.peer_id, y.supports_autonat
+                ))
+                .collect::<Vec<_>>()
+        );
         let (conn_id, info) = self
             .peer_info
             .iter()
